@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"cloud.google.com/go/auth/credentials"
+	"github.com/agladfield/postcart/pkg/shared/env"
 	"google.golang.org/genai"
 )
 
@@ -21,26 +22,24 @@ const (
 var imageGen4Client *genai.Client
 
 func newImagen4Image(ctx context.Context, prompt string) ([]byte, error) {
-	// fmt.Println("generate called")
-	// fmt.Println(prompt)
 	if imageGen4Client == nil {
 		// Load service account credentials
-		data, readKeyErr := os.ReadFile("/Users/aglad/Downloads/postcart-ce3696517869.json")
+		data, readKeyErr := os.ReadFile(env.GCPCredsPath())
 		if readKeyErr != nil {
-			return nil, readKeyErr
+			return nil, fmt.Errorf(imagen4ErrFmtStr, readKeyErr)
 		}
 		creds, credErr := credentials.DetectDefault(&credentials.DetectOptions{
 			CredentialsJSON: data,
 			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
 		})
 		if credErr != nil {
-			return nil, credErr
+			return nil, fmt.Errorf(imagen4ErrFmtStr, credErr)
 		}
 
 		var clientErr error
 		imageGen4Client, clientErr = genai.NewClient(ctx, &genai.ClientConfig{
 			Location:    "us-central1",
-			Project:     "postcart",
+			Project:     env.GCPProject(),
 			Backend:     genai.BackendVertexAI,
 			Credentials: creds,
 		})
@@ -69,3 +68,5 @@ func newImagen4Image(ctx context.Context, prompt string) ([]byte, error) {
 
 	return res.GeneratedImages[0].Image.ImageBytes, nil
 }
+
+// © Arthur Gladfield

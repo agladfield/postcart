@@ -5,12 +5,6 @@ import (
 	"net/http"
 )
 
-// send with template
-
-// we will need the template ID
-// so to get that, we should after configured list, check list, if got all three continue otherwise create,
-// store created IDs as variables
-
 const emailWithTemplatePath = "/email/withTemplate"
 
 type NewEmailFromTemplate[T any] struct {

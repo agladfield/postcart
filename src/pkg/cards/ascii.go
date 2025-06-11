@@ -13,13 +13,13 @@ func createBackASCII(artwork enum.ArtworkEnum, border enum.BorderEnum) string {
 	return addASCIIToFrame(asciiArtwork, borderASCII)
 }
 
-func createFrontASCII(email *EmailParams) string {
-	to := email.To
-	from := email.From
-	message := strings.ReplaceAll(email.Message, "\n", " ")
-	country := email.Country
-	border := email.Border
-	shape := email.StampShape
+func createFrontASCII(params *Params) string {
+	to := params.To
+	from := params.From
+	message := strings.ReplaceAll(params.Message, "\n", " ")
+	country := params.Country
+	border := params.Border
+	shape := params.StampShape
 
 	borderASCII := getASCIIBorder(border)
 	leftSide := createFrontASCIILeftSide(from, message, len(borderASCII.left))
@@ -86,7 +86,7 @@ const mountainsASCII = `
     /-___--_-___-_-__\###\
     #######################`
 
-const attachmentASCII = `                       ___
+const attachmentASCII = `                           ___
         _______________   /   \
        |         /\    | |  __
        |    __  /__\   | | |  \
@@ -116,9 +116,9 @@ type asciiBorder struct {
 
 var linesBorder = asciiBorder{
 	left:   "||",
-	right:  "-",
+	right:  "||",
 	bottom: "-",
-	top:    "||",
+	top:    "-",
 }
 
 var jaggedBorder = asciiBorder{
@@ -386,3 +386,5 @@ func breakupMessageForASCII(msg string) string {
 
 	return strings.Join(lines, "\n")
 }
+
+// © Arthur Gladfield

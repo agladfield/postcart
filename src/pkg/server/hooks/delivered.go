@@ -3,6 +3,7 @@ package hooks
 import (
 	"net/http"
 
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 )
 
@@ -18,7 +19,9 @@ func deliveredHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// record as delivered
-	// update job status
+	jdb.RecordDelivery()
 
 	okResponse(&w, r)
 }
+
+// © Arthur Gladfield

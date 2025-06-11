@@ -52,48 +52,58 @@ var frontTextPositions = struct {
 	},
 }
 
-func createFront(email *EmailParams) (*sideOutput, error) {
+func createFront(params *Params) (*sideOutput, error) {
+	ascii := createFrontASCII(params)
+
 	// create the stamp
-	stampImg, stampErr := createStamp(email)
+	stampImg, stampErr := createStamp(params)
 	if stampErr != nil {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, stampErr)
 	}
 	defer stampImg.Close()
 
-	contentImg, contentImgErr := img.LoadFromEmbed(&postcardResources, "res/postcards/content.png")
+	contentImg, contentImgErr := pcCache.Obtain("res/postcards/content.png")
 	if contentImgErr != nil {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, contentImgErr)
 	}
-	fgMask, fgMaskErr := img.LoadFromEmbed(&postcardResources, "res/postcards/bg-frame.png")
+	defer contentImg.Close()
+	fgMask, fgMaskErr := pcCache.Obtain("res/postcards/bg-frame.png")
 	if fgMaskErr != nil {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, fgMaskErr)
 	}
+	defer fgMask.Close()
 	maskedContent, maskedContentErr := img.Mask(contentImg, fgMask)
 	if maskedContentErr != nil {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, maskedContentErr)
 	}
+
 	// apply writing
-	textErr := addTextToFront(maskedContent, email)
+	textErr := addTextToFront(maskedContent, params)
 	if textErr != nil {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, textErr)
 	}
+
 	// apply texture
-	// if texture we apply (load, mask, multiply)
-	texture, textureErr := img.LoadFromEmbed(&postcardResources, "res/postcards/texture-classic.png")
-	if textureErr != nil {
-		return nil, fmt.Errorf(cardsFrontErrFmtStr, textureErr)
-	}
-	maskedTex, maskTexErr := img.Mask(texture, maskedContent)
-	if maskTexErr != nil {
-		return nil, fmt.Errorf(cardsFrontErrFmtStr, maskTexErr)
-	}
-	var multErr error
-	maskedContent, multErr = img.Multiply(maskedContent, maskedTex)
-	if multErr != nil {
-		return nil, fmt.Errorf(cardsFrontErrFmtStr, multErr)
+	if params.Textured == enum.TexturedEnabled {
+		texture, textureErr := pcCache.Obtain("res/postcards/texture-classic.png")
+		if textureErr != nil {
+			return nil, fmt.Errorf(cardsFrontErrFmtStr, textureErr)
+		}
+		defer texture.Close()
+		maskedTex, maskTexErr := img.Mask(texture, maskedContent)
+		if maskTexErr != nil {
+			return nil, fmt.Errorf(cardsFrontErrFmtStr, maskTexErr)
+		}
+		defer maskedTex.Close()
+
+		var multErr error
+		maskedContent, multErr = img.Multiply(maskedContent, maskedTex)
+		if multErr != nil {
+			return nil, fmt.Errorf(cardsFrontErrFmtStr, multErr)
+		}
 	}
 
-	// resize and apply stamp
+	// // resize and apply stamp
 	sizeRatio := stampResizeFactor / float64(stampImg.Width())
 	resizeErr := stampImg.Resize(sizeRatio, vips.KernelAuto)
 	if resizeErr != nil {
@@ -104,23 +114,31 @@ func createFront(email *EmailParams) (*sideOutput, error) {
 		return nil, fmt.Errorf(cardsFrontErrFmtStr, compositeErr)
 	}
 
-	ascii := createFrontASCII(email)
+	frontBuff, _, backBuffErr := maskedContent.ExportPng(&vips.PngExportParams{Quality: 90})
+	if backBuffErr != nil {
+		return nil, backBuffErr
+	}
+	defer maskedContent.Close()
+	front, frontErr := img.LoadFromBuffer(frontBuff)
+	if frontErr != nil {
+		return nil, frontErr
+	}
 
 	return &sideOutput{
-		image: maskedContent,
+		image: front,
 		ascii: ascii,
 	}, nil
 }
 
-func addTextToFront(content *vips.ImageRef, email *EmailParams) error {
-	fontEnum := email.Font
+func addTextToFront(content *vips.ImageRef, params *Params) error {
+	fontEnum := params.Font
 	if fontEnum == enum.FontUnknown {
 		fontEnum = enum.FontMarker
 	}
 	font := getTextFont(fontEnum)
 
 	recipientNameText := img.TextParams{
-		Text:    email.To.Name,
+		Text:    params.To.Name,
 		Font:    font,
 		Width:   frontTextPositions.recipientName.w,
 		Height:  frontTextPositions.recipientName.h,
@@ -135,7 +153,7 @@ func addTextToFront(content *vips.ImageRef, email *EmailParams) error {
 	}
 
 	recipientEmailText := img.TextParams{
-		Text:    email.To.Email,
+		Text:    params.To.Email,
 		Font:    font,
 		Width:   frontTextPositions.recipientEmail.w,
 		Height:  frontTextPositions.recipientEmail.h,
@@ -149,9 +167,9 @@ func addTextToFront(content *vips.ImageRef, email *EmailParams) error {
 		return fmt.Errorf(cardsFrontTextErrFmtStr, recipEmailErr)
 	}
 
-	if len(email.From.Name) > 0 {
+	if len(params.From.Name) > 0 {
 		senderNameText := img.TextParams{
-			Text:    email.From.Name,
+			Text:    params.From.Name,
 			Font:    font,
 			Width:   frontTextPositions.senderName.w,
 			Height:  frontTextPositions.senderName.h,
@@ -166,9 +184,9 @@ func addTextToFront(content *vips.ImageRef, email *EmailParams) error {
 		}
 	}
 
-	if len(email.From.Email) > 0 {
+	if len(params.From.Email) > 0 {
 		senderEmailText := img.TextParams{
-			Text:    email.From.Email,
+			Text:    params.From.Email,
 			Font:    font,
 			Width:   frontTextPositions.senderEmail.w,
 			Height:  frontTextPositions.senderEmail.h,
@@ -183,9 +201,9 @@ func addTextToFront(content *vips.ImageRef, email *EmailParams) error {
 		}
 	}
 
-	if len(email.Message) > 0 {
+	if len(params.Message) > 0 {
 		messageText := img.TextParams{
-			Text:    messageBreakup(email.Message),
+			Text:    messageBreakup(sanitizeMessage(params.Message)),
 			Font:    font,
 			Width:   frontTextPositions.message.w,
 			Height:  frontTextPositions.message.h,
@@ -242,3 +260,5 @@ func messageBreakup(msg string) string {
 	}
 	return strings.Join(adjustedLines, "\n")
 }
+
+// © Arthur Gladfield

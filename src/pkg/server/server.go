@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/agladfield/postcart/pkg/server/hooks"
@@ -34,7 +35,11 @@ const (
 )
 
 func Prepare() error {
-	portErr := checkPortAvailability("8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	portErr := checkPortAvailability(port)
 	if portErr != nil {
 		return fmt.Errorf(httpServerPrepareErrFmtStr, portErr)
 	}
@@ -43,6 +48,8 @@ func Prepare() error {
 	if hooksConfigErr != nil {
 		return fmt.Errorf(httpServerPrepareErrFmtStr, hooksConfigErr)
 	}
+
+	http.HandleFunc("/internal/stats", statsHandler)
 
 	return nil
 }
@@ -55,13 +62,12 @@ func Listen() {
 	// add hook routes
 	hooks.Routes()
 
-	// var serverErr error
-
 	server = &http.Server{
-		Addr: ":8080",
+		Addr:              ":8080",
+		ReadHeaderTimeout: time.Second * 5,
 	}
 
-	// Start the server in a goroutine
+	// start the server in a goroutine to prevent blocking main thread
 	go func() {
 		if listenErr := server.ListenAndServe(); listenErr != http.ErrServerClosed {
 			log.Fatalf("http server ListenAndServe(): %v", listenErr)

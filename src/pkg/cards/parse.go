@@ -2,13 +2,40 @@ package cards
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
-	"github.com/agladfield/postcart/pkg/pdb"
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 	"github.com/agladfield/postcart/pkg/shared/enum"
+	"github.com/agladfield/postcart/pkg/shared/env"
 	"github.com/agladfield/postcart/pkg/shared/tools/geo"
 )
+
+const cardsParseErrFmtStr = "cards parse err: %w"
+
+func Parse(inbound *postmark.InboundData) (Params, error) {
+	details, err := parseEmailBody(inbound.TextBody)
+	if err != nil {
+		if err == errMissingFromField {
+			details.From = Person{
+				Email: inbound.FromFull.Email,
+				Name:  inbound.FromFull.Name,
+			}
+		} else {
+			return Params{}, err
+		}
+	}
+
+	details.ID = inbound.MessageID
+	details.Subject = inbound.Subject
+
+	if len(inbound.Attachments) > 0 && env.AllowAttachments() {
+		details.Attachment = &inbound.Attachments[0]
+	}
+
+	return details, nil
+}
 
 // Person represents a name and email pair
 type Person struct {
@@ -16,73 +43,45 @@ type Person struct {
 	Email string
 }
 
-// EmailParams holds all extracted email parameters
-type EmailParams struct {
+// Params holds all extracted email parameters
+type Params struct {
 	ID         string
 	To         Person
 	From       Person
 	Artwork    enum.ArtworkEnum
-	ArtStyle   enum.StyleEnum
+	Style      enum.StyleEnum
 	Font       enum.FontEnum
 	Border     enum.BorderEnum
 	StampShape enum.StampShapeEnum
+	Textured   enum.TexturedEnum
 	Country    string
 	Subject    string
 	Message    string
 	Attachment *postmark.EmailAttachment
 }
 
-func (ep *EmailParams) ToQueueRequest(userID string) *pdb.SetQueuedRequestParams {
-	var attachment []byte
-	if ep.Attachment != nil {
-		attachment = []byte(ep.Attachment.Content)
+func (p *Params) toJDBJobRecord() jdb.JobRecord {
+	attachmentType := ""
+	if p.Attachment != nil {
+		attachmentType = p.Attachment.ContentType
 	}
-
-	queued := pdb.SetQueuedRequestParams{
-		ID:          ep.ID,
-		User:        userID,
-		ToEmail:     ep.To.Email,
-		ToName:      ep.To.Name,
-		FromName:    ep.From.Name,
-		FromEmail:   ep.From.Email,
-		ArtworkEnum: int64(ep.Artwork),
-		BorderEnum:  int64(ep.Border),
-		FontEnum:    int64(ep.Font),
-		ShapeEnum:   int64(ep.StampShape),
-		StyleEnum:   int64(ep.ArtStyle),
-		Country:     ep.Country,
-		Message:     ep.Message,
-		Attachment:  attachment,
+	return jdb.JobRecord{ID: p.ID,
+		ToEmail:        p.To.Email,
+		ToName:         p.To.Name,
+		FromEmail:      p.From.Email,
+		FromName:       p.From.Name,
+		Artwork:        int8(p.Artwork),
+		Style:          int8(p.Style),
+		Font:           int8(p.Font),
+		Border:         int8(p.Border),
+		StampShape:     int8(p.StampShape),
+		Textured:       int8(p.Textured),
+		Country:        p.Country,
+		Subject:        p.Subject,
+		Message:        p.Message,
+		AttachmentType: attachmentType,
 	}
-
-	return &queued
 }
-
-// func (ep *EmailParams) ToCompletedRequest() *pdb.QueuedRequest {
-// 	var attachment []byte
-// 	if ep.Attachment != nil {
-// 		attachment = []byte(ep.Attachment.Content)
-// 	}
-
-// 	queued := pdb.QueuedRequest{
-// 		ID:          ep.ID,
-// 		User:        "user",
-// 		ToEmail:     ep.To.Email,
-// 		ToName:      ep.To.Name,
-// 		FromName:    ep.From.Name,
-// 		FromEmail:   ep.From.Email,
-// 		ArtworkEnum: int64(ep.Artwork),
-// 		BorderEnum:  int64(ep.Border),
-// 		FontEnum:    int64(ep.Font),
-// 		ShapeEnum:   int64(ep.StampShape),
-// 		StyleEnum:   int64(ep.ArtStyle),
-// 		Country:     ep.Country,
-// 		Message:     ep.Message,
-// 		HadAttachment:  false,
-// 	}
-
-// 	return &queued
-// }
 
 // Field key variations for flexible matching
 var fieldKeys = map[string][]string{
@@ -94,6 +93,7 @@ var fieldKeys = map[string][]string{
 	"font":     {"font:"},
 	"shape":    {"shape:"},
 	"country":  {"country:"},
+	"textured": {"textured:"},
 }
 
 // Enum string mappings
@@ -125,14 +125,9 @@ var borderMap = map[string]enum.BorderEnum{
 	"none":    enum.BorderStandard,
 	"classic": enum.BorderStandard,
 	"default": enum.BorderStandard,
-	"rect":    enum.BorderStandard,
-	"line":    enum.BorderLines,
 	"lines":   enum.BorderLines,
-	"cube":    enum.BorderCubes,
 	"cubes":   enum.BorderCubes,
-	"stripe":  enum.BorderStripes,
 	"stripes": enum.BorderStripes,
-	"striped": enum.BorderStripes,
 	"art":     enum.BorderPhoto,
 	"artwork": enum.BorderPhoto,
 	"photo":   enum.BorderPhoto,
@@ -155,8 +150,17 @@ var fontMap = map[string]enum.FontEnum{
 	"vintage":    enum.FontMidCentury,
 }
 
-// levenshteinDistance calculates the edit distance between two strings
-func levenshteinDistance(s, t string) int {
+var texturedMap = map[string]enum.TexturedEnum{
+	"yes":      enum.TexturedEnabled,
+	"enabled":  enum.TexturedEnabled,
+	"true":     enum.TexturedEnabled,
+	"no":       enum.TexturedDisabled,
+	"disabled": enum.TexturedDisabled,
+	"false":    enum.TexturedDisabled,
+}
+
+// nearestString calculates the character distance between two strings
+func nearestString(s, t string) int {
 	if len(s) == 0 {
 		return len(t)
 	}
@@ -164,11 +168,11 @@ func levenshteinDistance(s, t string) int {
 		return len(s)
 	}
 	if s[0] == t[0] {
-		return levenshteinDistance(s[1:], t[1:])
+		return nearestString(s[1:], t[1:])
 	}
-	a := levenshteinDistance(s[1:], t) + 1
-	b := levenshteinDistance(s, t[1:]) + 1
-	c := levenshteinDistance(s[1:], t[1:]) + 1
+	a := nearestString(s[1:], t) + 1
+	b := nearestString(s, t[1:]) + 1
+	c := nearestString(s[1:], t[1:]) + 1
 	if a > b {
 		a = b
 	}
@@ -187,7 +191,7 @@ func parseEnum[T comparable](input string, enumMap map[string]T, defaultValue T,
 	minDistance := int(^uint(0) >> 1) // max int
 	var closestEnum T
 	for str, enum := range enumMap {
-		dist := levenshteinDistance(input, strings.ToLower(str))
+		dist := nearestString(input, strings.ToLower(str))
 		if dist < minDistance {
 			minDistance = dist
 			closestEnum = enum
@@ -214,8 +218,10 @@ func parsePerson(input string) Person {
 	return Person{Name: input}
 }
 
-// parseEmailBody parses the email body into EmailParams
-func parseEmailBody(body string) (EmailParams, error) {
+var errMissingFromField = errors.New("missing required field: From")
+
+// parseEmailBody parses the email body into Params
+func parseEmailBody(body string) (Params, error) {
 	// start := time.Now()
 	lines := strings.Split(body, "\n")
 	var messageLines []string
@@ -254,14 +260,29 @@ func parseEmailBody(body string) (EmailParams, error) {
 	}
 
 	// Populate the struct
-	var result EmailParams
+	var result Params
 
 	// Required field: To
 	if val, ok := params["to"]; ok {
 		result.To = parsePerson(val)
 	} else {
-		return EmailParams{}, errors.New("missing required field: To")
+		return Params{}, fmt.Errorf(cardsParseErrFmtStr, errors.New("missing required field: To"))
 	}
+
+	// Enum fields with fuzzy matching
+	result.Artwork = parseEnum(params["artwork"], artworkMap, enum.ArtworkUnknown, 2)
+	result.Border = parseEnum(params["border"], borderMap, enum.BorderUnknown, 2)
+	result.StampShape = parseEnum(params["shape"], shapeMap, enum.StampShapeUnknown, 2)
+	result.Font = parseEnum(params["font"], fontMap, enum.FontUnknown, 2)
+	result.Style = parseEnum(params["artstyle"], artStyleMap, enum.StyleUnknown, 2)
+	result.Textured = parseEnum(params["textured"], texturedMap, enum.TexturedUnknown, 2)
+
+	// Country with normalization
+
+	result.Country = geo.GetCountry(params["country"])
+
+	// Message
+	result.Message = strings.Join(messageLines, "\n")
 
 	// Required field: From with special handling
 	if val, ok := params["from"]; ok {
@@ -273,25 +294,10 @@ func parseEmailBody(body string) (EmailParams, error) {
 			result.From = parsePerson(val)
 		}
 	} else {
-		return EmailParams{}, errors.New("missing required field: From")
+		return result, errMissingFromField
 	}
-
-	// Enum fields with fuzzy matching
-	result.Artwork = parseEnum(params["artwork"], artworkMap, enum.ArtworkUnknown, 2)
-	result.Border = parseEnum(params["border"], borderMap, enum.BorderUnknown, 2)
-	result.StampShape = parseEnum(params["shape"], shapeMap, enum.StampShapeUnknown, 2)
-	result.Font = parseEnum(params["font"], fontMap, enum.FontUnknown, 2)
-	// fmt.Println("took:", time.Since(start))
-	// artStyleStart := time.Now()
-	result.ArtStyle = parseEnum(params["artstyle"], artStyleMap, enum.StyleUnknown, 2)
-	// fmt.Println("art style took:", time.Since(artStyleStart))
-
-	// Country with normalization
-
-	result.Country = geo.GetCountry(params["country"])
-
-	// Message
-	result.Message = strings.Join(messageLines, "\n")
 
 	return result, nil
 }
+
+// © Arthur Gladfield

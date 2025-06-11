@@ -286,3 +286,5 @@ var countryNamesToISO2 = map[string]string{
 	"zambia":                              "ZM",
 	"zimbabwe":                            "ZW",
 }
+
+// © Arthur Gladfield

@@ -32,7 +32,7 @@ func CreateInboundTriggerRule(emailOrDomain string) (*InboundTriggerRuleResponse
 
 	var triggerRuleRes InboundTriggerRuleResponse
 
-	reqErr := request(api, validateTemplatePath, http.MethodPost, body, &triggerRuleRes)
+	reqErr := request(api, createInboundTriggerPath, http.MethodPost, body, &triggerRuleRes)
 	if reqErr != nil {
 		return nil, fmt.Errorf(postmarkAPIErrFmtStr, reqErr)
 	}

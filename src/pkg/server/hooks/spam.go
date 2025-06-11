@@ -3,6 +3,8 @@ package hooks
 import (
 	"net/http"
 
+	"github.com/agladfield/postcart/pkg/cards"
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 )
 
@@ -17,11 +19,20 @@ func spamComplaintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// prevent sender from sending emails again for at least 1 week
-	// db.
 	// record spam complaint
+	jdb.RecordSpamComplaint()
 	// block the recipient from recieving emails
+	jdb.BlockRecipient(spamComplaintData.Email)
+	jdb.RecordBlockedSender()
 	// block the sender from sending emails
+	if spamComplaintData.Metadata != nil {
+		senderEmail, senderEmailExists := spamComplaintData.Metadata["sender_email"]
+		if senderEmailExists {
+			cards.BlockSender(senderEmail)
+		}
+	}
 
 	okResponse(&w, r)
 }
+
+// © Arthur Gladfield

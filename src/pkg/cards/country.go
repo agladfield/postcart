@@ -51,3 +51,5 @@ func getCountryColors(iso2 string) ([]colors.Color, error) {
 
 	return colors, nil
 }
+
+// © Arthur Gladfield

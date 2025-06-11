@@ -11,12 +11,13 @@ import (
 	"github.com/agladfield/postcart/pkg/cards"
 	"github.com/agladfield/postcart/pkg/postmark"
 	"github.com/agladfield/postcart/pkg/shared/enum"
+	"github.com/agladfield/postcart/pkg/shared/tools/random"
 	"github.com/davidbyttow/govips/v2/vips"
 )
 
-var postcardEntries = []cards.EmailParams{
+var postcardEntries = []cards.Params{
 	{
-		ID: "grandma",
+		ID: "cookie-recipe",
 		To: cards.Person{
 			Name:  "Grandma",
 			Email: "grandma@email.madeup",
@@ -24,15 +25,16 @@ var postcardEntries = []cards.EmailParams{
 			Name:  "Arthur",
 			Email: "arthur@email.madeup",
 		},
-		StampShape: enum.StampShapeRect,
+		StampShape: enum.StampShapeRectClassic,
 		Border:     enum.BorderStandard,
 		Artwork:    enum.ArtworkCity,
-		Country:    "US",
-		Subject:    "Cookie Recipe",
+		Textured:   enum.TexturedEnabled,
+		Font:       enum.FontMarker,
+		Country:    "PC",
 		Message:    "It was good visiting you in the city the other day Grandma. If you could get me the recipe for the chocolate chip cookies that would be spectacular. I know I loved them and they're a real fan favorite.",
 	},
 	{
-		ID: "balajis",
+		ID: "network-state",
 		To: cards.Person{
 			Name:  "Surangel Samuel Whipps Jr.",
 			Email: "pres@gov.pw",
@@ -41,44 +43,51 @@ var postcardEntries = []cards.EmailParams{
 			Email: "balajis@ns.edu",
 		},
 		StampShape: enum.StampShapeCircleClassic,
-		Border:     enum.BorderCubes,
+		Border:     enum.BorderLines,
 		Artwork:    enum.ArtworkIslands,
+		Font:       enum.FontPolite,
+		Textured:   enum.TexturedDisabled,
 		Country:    "PW",
-		Subject:    "Network States",
-		Message:    "It was good visiting you in the city the other day Grandma. If you could get me the recipe for the chocolate chip cookies that would be spectacular. I know I loved them and they're a real fan favorite.",
+		Message:    "Thanks for doing the pod and taking Palau's future seriously.\n You've got some exciting programs in the\n works and I can't wait to see what else you come up with. \nIt's only fitting as one of the world's most unique currency innovators. \nCongrats on the islands!",
 	},
 	{
-		ID: "grandma",
+		ID: "vineyard-woes",
 		To: cards.Person{
-			Name:  "Grandma",
-			Email: "grandma@email.madeup",
+			Name:  "Data",
+			Email: "data@androids.star.fleet",
 		}, From: cards.Person{
-			Name:  "Arthur",
-			Email: "arthur@email.madeup",
+			Name:  "Jean-Luc Picard",
+			Email: "jeanlucpicard@star.fleet",
 		},
 		StampShape: enum.StampShapeRect,
-		Border:     enum.BorderStandard,
-		Artwork:    enum.ArtworkCity,
-		Country:    "US",
-		Subject:    "Cookie Recipe",
-		Message:    "It was good visiting you in the city the other day Grandma. If you could get me the recipe for the chocolate chip cookies that would be spectacular. I know I loved them and they're a real fan favorite.",
+		Border:     enum.BorderStripes,
+		Artwork:    enum.ArtworkLakeside,
+		Font:       enum.FontMidCentury,
+		Textured:   enum.TexturedEnabled,
+		Country:    "FR",
+		Message: `My vineyards are suffering tremendously from this heat Data. I would be most appreciative if you could come up with a solution for my particular species of grapes that does not end up watering down the wine.
+
+Thanks, Jean-Luc`,
 	},
-	// {
-	// 	ID: "grandma",
-	// 	To: cards.Person{
-	// 		Name:  "Grandma",
-	// 		Email: "grandma@email.madeup",
-	// 	}, From: cards.Person{
-	// 		Name:  "Arthur",
-	// 		Email: "arthur@email.madeup",
-	// 	},
-	// 	StampShape: enum.StampShapeRect,
-	// 	Border:     enum.BorderStandard,
-	// 	Artwork:    enum.ArtworkCity,
-	// 	Country:    "US",
-	// 	Subject:    "Cookie Recipe",
-	// 	Message:    "It was good visiting you in the city the other day Grandma. If you could get me the recipe for the chocolate chip cookies that would be spectacular. I know I loved them and they're a real fan favorite.",
-	// },
+	{
+		ID: "west-virginia",
+		To: cards.Person{
+			Name:  "Mountains",
+			Email: "mountains@nature.gov",
+		}, From: cards.Person{
+			Name:  "John D.",
+			Email: "johnd@music.guy",
+		},
+		StampShape: enum.StampShapeRectClassic,
+		Border:     enum.BorderCubes,
+		Artwork:    enum.ArtworkMountains,
+		Font:       enum.FontTypewriter,
+		Country:    "US",
+		Message: `"Country roads, take me home
+To the place I belong
+West Virginia, mountain mama
+Take me home, country roads"`,
+	},
 	{
 		ID: "attachment",
 		To: cards.Person{
@@ -88,11 +97,15 @@ var postcardEntries = []cards.EmailParams{
 			Name:  "Prime",
 			Email: "primagen@terminal.coffee",
 		},
-		Border:  enum.BorderPhoto,
-		Artwork: enum.ArtworkAttachment,
-		Country: "BR",
-		Subject: "Coffee Deal",
-		Message: "It was good visiting you in the city the other day Grandma. If you could get me the recipe for the chocolate chip cookies that would be spectacular. I know I loved them and they're a real fan favorite.",
+		Border:     enum.BorderPhoto,
+		Artwork:    enum.ArtworkAttachment,
+		Country:    "BR",
+		StampShape: enum.StampShapeCircle,
+		Font:       enum.FontMarker,
+		Message: `Dear President Coffee,
+I know your margins are hurting since you didn't have the bright idea to sell coffee over ssh. My team and I are willing to offer you a deal to save your company. Have your people reach out to my people and maybe you don't have to go bankrupt.
+Best,
+The Coffeeagen`,
 		Attachment: &postmark.EmailAttachment{
 			Content:     "./pkg/cards/res/artwork/attachment.jpeg",
 			ContentType: "image/jpeg",
@@ -101,6 +114,7 @@ var postcardEntries = []cards.EmailParams{
 }
 
 func demo() error {
+	random.SetSeed(1234)
 	ctx := context.Background()
 	dirErr := os.MkdirAll("./demo", 0700)
 	if dirErr != nil {
@@ -111,8 +125,8 @@ func demo() error {
 	if prepErr != nil {
 		return prepErr
 	}
+	defer cards.Close()
 	for _, postcard := range postcardEntries {
-		// should do the generation postjob
 		if postcard.Attachment != nil {
 			attachmentBytes, loadErr := os.ReadFile(postcard.Attachment.Content)
 			if loadErr != nil {
@@ -125,6 +139,12 @@ func demo() error {
 		if err != nil {
 			return err
 		}
+
+		_, byteErr := unified.UnifiedImage.ToBytes()
+		if byteErr != nil {
+			return byteErr
+		}
+
 		bytes, _, exportErr := unified.UnifiedImage.ExportJpeg(&vips.JpegExportParams{
 			Quality: 90,
 		})
@@ -145,7 +165,6 @@ func demo() error {
 		fmt.Println()
 		fmt.Println(unified.UnifiedText)
 	}
-
 	return nil
 }
 
@@ -156,3 +175,5 @@ func main() {
 	}
 	os.Exit(0)
 }
+
+// © Arthur Gladfield

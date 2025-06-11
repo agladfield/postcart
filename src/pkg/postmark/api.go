@@ -26,8 +26,6 @@ const (
 	postmarkAPIRequestErrFmtStr = "postmark request err: %w"
 )
 
-// POSTMARK_API_TEST can use this as server token for testing validity but not send
-
 type apiClient struct {
 	baseURL        string
 	client         *http.Client
@@ -107,8 +105,6 @@ func request[R any](c *apiClient, path string, method string, body io.Reader, re
 	if decodeErr != nil {
 		return fmt.Errorf(postmarkAPIRequestErrFmtStr, (fmt.Errorf("api client failed to decode response err: %w", decodeErr)))
 	}
-
-	// return fmt.Errorf("res data: %v", *resData)
 
 	return nil
 }

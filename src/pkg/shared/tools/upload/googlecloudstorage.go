@@ -12,14 +12,16 @@ import (
 	"google.golang.org/api/option"
 )
 
+const uploadGCSErrFmtStr = "upload to gcs err: %w"
+
 var gcpStorageClient *storage.Client
 
 func uploadImageWithGoogleCloud(bytes []byte) (string, error) {
 	if gcpStorageClient == nil {
 		var clientErr error
-		gcpStorageClient, clientErr = storage.NewClient(context.Background(), option.WithCredentialsFile("/Users/aglad/Downloads/postcart-ce3696517869.json"))
+		gcpStorageClient, clientErr = storage.NewClient(context.Background(), option.WithCredentialsFile(env.GCPCredsPath()))
 		if clientErr != nil {
-			return "", clientErr
+			return "", fmt.Errorf(uploadGCSErrFmtStr, clientErr)
 		}
 	}
 
@@ -29,12 +31,12 @@ func uploadImageWithGoogleCloud(bytes []byte) (string, error) {
 	background := object.NewWriter(context.Background())
 	_, writeErr := background.Write(bytes)
 	if writeErr != nil {
-		return "", writeErr
+		return "", fmt.Errorf(uploadGCSErrFmtStr, writeErr)
 	}
 
 	writeCloseErr := background.Close()
 	if writeCloseErr != nil {
-		return "", writeCloseErr
+		return "", fmt.Errorf(uploadGCSErrFmtStr, writeCloseErr)
 	}
 
 	signedURL, signingErr := bucket.SignedURL(objectName, &storage.SignedURLOptions{
@@ -42,10 +44,10 @@ func uploadImageWithGoogleCloud(bytes []byte) (string, error) {
 		Expires: time.Now().Add(time.Hour * 24 * 7),
 	})
 	if signingErr != nil {
-		return "", signingErr
+		return "", fmt.Errorf(uploadGCSErrFmtStr, signingErr)
 	}
-
-	//
 
 	return signedURL, nil
 }
+
+// © Arthur Gladfield

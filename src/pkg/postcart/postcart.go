@@ -10,15 +10,14 @@ import (
 	"syscall"
 
 	"github.com/agladfield/postcart/pkg/cards"
-	"github.com/agladfield/postcart/pkg/pdb"
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 	"github.com/agladfield/postcart/pkg/server"
 	"github.com/agladfield/postcart/pkg/shared/env"
 )
 
 func Close() {
-	// Close down DB connection
-	pdb.Close()
+	jdb.Close()
 	cards.Close()
 	server.Close()
 }
@@ -36,11 +35,11 @@ func Run() error {
 		return fmt.Errorf(postcartProgramErrFmtStr, envErr)
 	}
 
-	// dbErr := pdb.Configure(context.Background(), env.TursoURL(), env.TursoToken())
-	// if dbErr != nil {
-	// 	return fmt.Errorf(postcartProgramErrFmtStr, dbErr)
-	// }
 	defer Close()
+	jdbErr := jdb.Load()
+	if jdbErr != nil {
+		return jdbErr
+	}
 
 	// configure postmark
 	postmarkErr := postmark.Configure()
@@ -71,3 +70,5 @@ func Run() error {
 
 	return nil
 }
+
+// © Arthur Gladfield

@@ -10,12 +10,10 @@ import (
 
 const cardsBackErrFmtStr = "cards create back err: %w"
 
-func createBack(ctx context.Context, email *EmailParams) (*sideOutput, error) {
-	ascii := createBackASCII(email.Artwork, email.Border)
-	// fmt.Println(ascii)
-	// panic("")
+func createBack(ctx context.Context, params *Params) (*sideOutput, error) {
+	ascii := createBackASCII(params.Artwork, params.Border)
 	// get the art image early (large-ish network call so it could fail and it's better to fail early)
-	artImage, artErr := getArtwork(ctx, email.Artwork, email.ArtStyle, email.Attachment)
+	artImage, artErr := getArtwork(ctx, params.Artwork, params.Style, params.Attachment)
 	if artErr != nil {
 		return nil, fmt.Errorf(cardsBackErrFmtStr, artErr)
 	}
@@ -39,8 +37,20 @@ func createBack(ctx context.Context, email *EmailParams) (*sideOutput, error) {
 		return nil, fmt.Errorf(cardsBackErrFmtStr, cropErr)
 	}
 
+	backBuff, _, backBuffErr := cropped.ExportPng(&vips.PngExportParams{Quality: 90})
+	if backBuffErr != nil {
+		return nil, backBuffErr
+	}
+	defer cropped.Close()
+	back, backErr := img.LoadFromBuffer(backBuff)
+	if backErr != nil {
+		return nil, backErr
+	}
+
 	return &sideOutput{
-		image: cropped,
+		image: back,
 		ascii: ascii,
 	}, nil
 }
+
+// © Arthur Gladfield

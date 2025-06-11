@@ -1,22 +1,12 @@
-package postcart
+package cards
 
 import (
+	"fmt"
+
 	"github.com/agladfield/postcart/pkg/postmark"
 )
 
-const (
-	deliveriesTemplateAlias     = "postcart-deliveries-template"
-	deliveredTemplateAlias      = "postcart-delivered-template"
-	bounceTemplateAlias         = "postcart-bounce-template"
-	spamComplaintTemplateAlias  = "postcart-spamc-template"
-	invalidBalanceTemplateAlias = "postcart-balance-template"
-	layoutTemplateAlias         = "postcart-layout-template"
-)
-
-// layout template
-// bounce template
-// delivered template
-// delivery template
+const deliveriesTemplateAlias = "postcart-deliveries-template"
 
 const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -26,8 +16,10 @@ const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Trans
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <title></title>
     <style type="text/css" rel="stylesheet" media="all">
+    /* Bunny Fonts Import */
+    @import url("https://fonts.bunny.net/css?family=open-sans:400,700");
+
     /* Base ------------------------------ */
-	@import url("https://fonts.bunny.net/css?family=open-sans:400,700");
     body {
       width: 100% !important;
       height: 100%;
@@ -36,6 +28,7 @@ const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Trans
       -webkit-text-size-adjust: none;
       background-color: #FFFFFF;
       color: #51545E;
+      font-family: "Open Sans", Helvetica, Arial, sans-serif;
     }
 
     a {
@@ -56,14 +49,9 @@ const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Trans
     }
 
     /* Type ------------------------------ */
-    body,
-    td,
-    th {
-      font-family: "Open Sans", Helvetica, Arial, sans-serif;
-    }
-
     p.sub {
       font-size: 13px;
+      font-family: "Open Sans", Helvetica, Arial, sans-serif;
     }
 
     /* Utilities ------------------------------ */
@@ -83,6 +71,7 @@ const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Trans
     .email-footer p {
       color: #51545E;
       margin: 0;
+      font-family: "Open Sans", Helvetica, Arial, sans-serif;
     }
 
     /* Media Queries ------------------------------ */
@@ -105,20 +94,22 @@ const deliveryHTMLTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Trans
       <!-- Image as main content -->
       <tr>
         <td>
-          <img src="{{encoded_image}}" style="display: block; width: 100%; height: auto; margin: 0; padding: 0; border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic;" />
+          <img src="{{image_url}}" style="display: block; width: 100%; height: auto; margin: 0; padding: 0; border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic;" />
         </td>
       </tr>
       <!-- Footer -->
       <tr>
         <td class="email-footer">
-          <p class="f-fallback sub align-center">sent with <a href="https://postc.art/">postc.art!</a></p>
+          <p class="f-fallback sub align-center">sent with <a href="https://postc.art">postc.art</a></p>
         </td>
       </tr>
     </table>
   </body>
 </html>`
 const deliveryTextTemplate = "{{ascii_text}}"
-const deliverySubjecTemplate = "📪 You've Received a Postcard: {{subject}}"
+const deliverySubjecTemplate = "📪 {{subject}}"
+
+const templatesErrFmtStr = "cards templates err: %w"
 
 func createDeliveriesTemplate() error {
 	deliveriesTmpl := postmark.NewTemplate{
@@ -130,17 +121,22 @@ func createDeliveriesTemplate() error {
 	}
 	_, tmplErr := postmark.CreateTemplate(deliveriesTmpl)
 	if tmplErr != nil {
-		return tmplErr
+		return fmt.Errorf(templatesErrFmtStr, tmplErr)
 	}
 
 	return nil
 }
 
+const (
+	listCount  = 100
+	listOffset = 0
+)
+
 func checkTemplatesAreAvailable() error {
 	// we will look for the alias
-	listTemplates, listErr := postmark.ListTemplates()
+	listTemplates, listErr := postmark.ListTemplates(listCount, listOffset)
 	if listErr != nil {
-		return listErr
+		return fmt.Errorf(templatesErrFmtStr, listErr)
 	}
 
 	deliveriesIncluded := false
@@ -149,19 +145,19 @@ func checkTemplatesAreAvailable() error {
 		switch tmpl.Alias {
 		case deliveriesTemplateAlias:
 			deliveriesIncluded = true
-		case deliveredTemplateAlias:
-		case bounceTemplateAlias:
-		case spamComplaintTemplateAlias:
-		case invalidBalanceTemplateAlias:
-		case layoutTemplateAlias:
 		default:
 			continue
 		}
 	}
 
 	if !deliveriesIncluded {
-		createDeliveriesTemplate()
+		deliveryTempErr := createDeliveriesTemplate()
+		if deliveryTempErr != nil {
+			return fmt.Errorf(templatesErrFmtStr, deliveryTempErr)
+		}
 	}
 
 	return nil
 }
+
+// © Arthur Gladfield

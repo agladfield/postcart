@@ -85,15 +85,11 @@ func isCloseToBlack(color Color) bool {
 	return false
 }
 
-// FindFirstNonWhiteColors returns the first two non-white, non-black colors from the slice.
-// If only one non-white, non-black color is found, it returns that color twice.
-// If no non-white, non-black colors are found, it returns the first non-white color twice.
 func FindFirstNonWhiteColors(colors []Color) (Color, Color, error) {
 	if len(colors) < 1 {
 		return Color{}, Color{}, fmt.Errorf("at least one color is required")
 	}
 
-	// Find the first non-white color and its index (may be black/dark gray as fallback)
 	var firstNonWhite Color
 	firstNonWhiteIndex := -1
 	for i, color := range colors {
@@ -108,30 +104,25 @@ func FindFirstNonWhiteColors(colors []Color) (Color, Color, error) {
 		return Color{}, Color{}, fmt.Errorf("no non-white color found")
 	}
 
-	// Look for a second non-white, non-black color starting after firstNonWhiteIndex
 	for i := firstNonWhiteIndex + 1; i < len(colors); i++ {
 		if !isCloseToWhite(colors[i]) && !isCloseToBlack(colors[i]) {
 			return firstNonWhite, colors[i], nil
 		}
 	}
 
-	// If no second non-white, non-black color is found, check if the first non-white is also non-black
 	if !isCloseToBlack(firstNonWhite) {
 		return firstNonWhite, firstNonWhite, nil
 	}
 
-	// If the first non-white is black/dark gray, look for any non-white color as second
 	for i := firstNonWhiteIndex + 1; i < len(colors); i++ {
 		if !isCloseToWhite(colors[i]) {
 			return firstNonWhite, colors[i], nil
 		}
 	}
 
-	// If no second non-white color is found, return the first non-white (even if black) twice
 	return firstNonWhite, firstNonWhite, nil
 }
 
-// GetDesiredColors returns the first two desirable colors (non-white, non-black if possible).
 func GetDesiredColors(colors []Color) (Color, Color, error) {
 	primColor := colors[0]
 	secColor := colors[0]
@@ -152,3 +143,5 @@ func GetDesiredColors(colors []Color) (Color, Color, error) {
 
 	return primColor, secColor, nil
 }
+
+// © Arthur Gladfield

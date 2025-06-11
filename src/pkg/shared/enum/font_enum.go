@@ -9,3 +9,5 @@ const (
 	FontPolite
 	FontMidCentury
 )
+
+// © Arthur Gladfield

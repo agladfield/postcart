@@ -28,3 +28,5 @@ func GenerateImage(ctx context.Context, genAIProvider enum.GenAIProviderEnum, pr
 
 	return result, nil
 }
+
+// © Arthur Gladfield

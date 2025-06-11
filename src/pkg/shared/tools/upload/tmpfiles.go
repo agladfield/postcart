@@ -16,6 +16,8 @@ type tmpFilesRes struct {
 	} `json:"data"`
 }
 
+const tmpFilesErrFmtStr = "upload to tmpfiles.org err: %w"
+
 const (
 	tmpFilesAPIURL          = "https://tmpfiles.org/api/v1/upload"
 	tmpFilesResURL          = "tmpfiles.org/"
@@ -25,13 +27,13 @@ const (
 )
 
 func uploadImageToTmpFiles(imageBytes []byte, filename string) (string, error) {
-	// Create a pipe to stream the multipart form data
+	// create a pipe to stream the multipart form data
 	bodyReader, bodyWriter := io.Pipe()
 
-	// Create a multipart writer
+	// create a multipart writer
 	writer := multipart.NewWriter(bodyWriter)
 
-	// Run form creation in a goroutine to write to the pipe
+	// run form creation in a goroutine to write to the pipe
 	go func() {
 		defer bodyWriter.Close()
 		defer writer.Close()
@@ -52,7 +54,7 @@ func uploadImageToTmpFiles(imageBytes []byte, filename string) (string, error) {
 
 	req, err := http.NewRequest(http.MethodPost, tmpFilesAPIURL, bodyReader)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf(tmpFilesErrFmtStr, fmt.Errorf("failed to create request: %w", err))
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
@@ -60,17 +62,17 @@ func uploadImageToTmpFiles(imageBytes []byte, filename string) (string, error) {
 	res, err := client.Do(req)
 	fmt.Printf("[%d] %s\n", res.StatusCode, tmpFilesAPIURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return "", fmt.Errorf(tmpFilesErrFmtStr, fmt.Errorf("failed to send request: %w", err))
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", res.StatusCode)
+		return "", fmt.Errorf(tmpFilesErrFmtStr, fmt.Errorf("unexpected status code: %d", res.StatusCode))
 	}
 
 	var result tmpFilesRes
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return "", fmt.Errorf(tmpFilesErrFmtStr, fmt.Errorf("failed to parse response: %w", err))
 	}
 
 	downloadURL := result.Data.URL
@@ -79,3 +81,5 @@ func uploadImageToTmpFiles(imageBytes []byte, filename string) (string, error) {
 
 	return httpsURL, nil
 }
+
+// © Arthur Gladfield

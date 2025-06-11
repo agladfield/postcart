@@ -24,8 +24,11 @@ var countryMap = mergeCountryMaps()
 
 func mergeCountryMaps() map[string]string {
 	newMap := make(map[string]string)
+	maps.Copy(newMap, countryISO2s)
 	maps.Copy(newMap, countryISO3s)
 	maps.Copy(newMap, countryNamesToISO2)
 
 	return newMap
 }
+
+// © Arthur Gladfield

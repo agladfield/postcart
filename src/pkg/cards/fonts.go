@@ -14,10 +14,8 @@ import (
 const cardsFontErrFmtStr = "cards fonts err: %w"
 
 func ensureDirectory(dirPath string) error {
-	// Check if directory exists
 	_, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
-		// Create directory with 0700 permissions (rwx for user)
 		err = os.MkdirAll(dirPath, 0700)
 		if err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dirPath, err)
@@ -28,7 +26,6 @@ func ensureDirectory(dirPath string) error {
 	if err != nil {
 		return fmt.Errorf("error checking directory %s: %w", dirPath, err)
 	}
-	// fmt.Printf("Directory already exists: %s\n", dirPath)
 	return nil
 }
 
@@ -38,23 +35,27 @@ func fontExists(fontPath string) bool {
 }
 
 func installFonts() error {
-	home, homeErr := os.UserHomeDir()
-	if homeErr != nil {
-		return fmt.Errorf(cardsFontErrFmtStr, homeErr)
-	}
+
 	var fontsDir string
 	switch runtime.GOOS {
 	case "darwin":
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return fmt.Errorf(cardsFontErrFmtStr, homeErr)
+		}
 		fontsDir = path.Join(home, "Library", "Fonts")
 	case "linux":
 		fontsDir = "/usr/share/fonts"
 	case "windows":
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return fmt.Errorf(cardsFontErrFmtStr, homeErr)
+		}
 		fontsDir = path.Join(home, "AppData", "Local", "Microsoft", "Windows", "Fonts")
 	default:
 		return fmt.Errorf(cardsFontErrFmtStr, errors.New("unsupported platform for installing fonts"))
 	}
 
-	// fontTempDir = tempDir
 	dirErr := ensureDirectory(fontsDir)
 	if dirErr != nil {
 		return fmt.Errorf(cardsFontErrFmtStr, dirErr)
@@ -95,3 +96,5 @@ var fontsMap = map[enum.FontEnum]string{
 	enum.FontTypewriter: "IM FELL English",
 	enum.FontMidCentury: "Aoboshi One",
 }
+
+// © Arthur Gladfield

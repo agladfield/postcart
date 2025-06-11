@@ -145,3 +145,5 @@ var stylePrompts = map[enum.StyleEnum]string{
 }
 
 const basePrompt = "You are to create a landscape strictly adhering to %s style that conforms to the following parameters: The scene should be of a %s. The focal content of the generated image should take up the full width and height of the frame."
+
+// © Arthur Gladfield

@@ -9,3 +9,5 @@ const (
 	StylePainting
 	StyleIllustrated
 )
+
+// © Arthur Gladfield

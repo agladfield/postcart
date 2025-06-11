@@ -5,8 +5,12 @@ import (
 
 	"github.com/agladfield/postcart/pkg/shared/enum"
 	"github.com/agladfield/postcart/pkg/shared/tools/img"
-	"github.com/agladfield/postcart/pkg/shared/tools/random"
 	"github.com/davidbyttow/govips/v2/vips"
+)
+
+const (
+	cardsStampErrFmtStr         = "cards create stamp err: %w"
+	cardsStampGetShapeErrFmtStr = "cards stamp get shape err: %w"
 )
 
 var stampShapePadding = map[enum.StampShapeEnum][2]int{
@@ -23,21 +27,9 @@ var stampShapePaths = map[enum.StampShapeEnum]string{
 	enum.StampShapeCircleClassic: "stamp_circle_classic.png",
 }
 
-var acceptableStampShapes = []enum.StampShapeEnum{
-	enum.StampShapeRect,
-	enum.StampShapeRectClassic,
-	enum.StampShapeCircle,
-	enum.StampShapeCircleClassic,
-}
-
-const (
-	cardsStampErrFmtStr         = "cards create stamp err: %w"
-	cardsStampGetShapeErrFmtStr = "cards stamp get shape err: %w"
-)
-
 func getStampShape(stampShape enum.StampShapeEnum) (*vips.ImageRef, error) {
 	stampShapePath := fmt.Sprintf("res/stamps/%s", stampShapePaths[stampShape])
-	loadedShape, loadErr := img.LoadFromEmbed(&stampResources, stampShapePath)
+	loadedShape, loadErr := sCache.Obtain(stampShapePath)
 	if loadErr != nil {
 		return nil, fmt.Errorf(cardsStampGetShapeErrFmtStr, loadErr)
 	}
@@ -45,11 +37,8 @@ func getStampShape(stampShape enum.StampShapeEnum) (*vips.ImageRef, error) {
 	return loadedShape, nil
 }
 
-func createStamp(email *EmailParams) (*vips.ImageRef, error) {
-	shapeEnum := email.StampShape
-	if shapeEnum == enum.StampShapeUnknown {
-		shapeEnum = random.FromSlice(acceptableStampShapes)
-	}
+func createStamp(params *Params) (*vips.ImageRef, error) {
+	shapeEnum := params.StampShape
 
 	stampShape, stampShapeErr := getStampShape(shapeEnum)
 	if stampShapeErr != nil {
@@ -57,21 +46,25 @@ func createStamp(email *EmailParams) (*vips.ImageRef, error) {
 	}
 	defer stampShape.Close()
 
-	stampTex, stampTexErr := img.LoadFromEmbed(&stampResources, "res/stamps/stamp-tex-1.jpg")
-	if stampTexErr != nil {
-		return nil, fmt.Errorf(cardsStampErrFmtStr, stampTexErr)
-	}
-	maskedTex, maskTexErr := img.Mask(stampTex, stampShape)
-	if maskTexErr != nil {
-		return nil, fmt.Errorf(cardsStampErrFmtStr, maskTexErr)
-	}
-	var stampMultErr error
-	stampShape, stampMultErr = img.Multiply(stampShape, maskedTex)
-	if stampMultErr != nil {
-		return nil, fmt.Errorf(cardsStampErrFmtStr, stampMultErr)
+	if params.Textured == enum.TexturedEnabled {
+		stampTex, stampTexErr := sCache.Obtain("res/stamps/stamp-tex-1.jpg")
+		if stampTexErr != nil {
+			return nil, fmt.Errorf(cardsStampErrFmtStr, stampTexErr)
+		}
+		defer stampTex.Close()
+		maskedTex, maskTexErr := img.Mask(stampTex, stampShape)
+		if maskTexErr != nil {
+			return nil, fmt.Errorf(cardsStampErrFmtStr, maskTexErr)
+		}
+		defer maskedTex.Close()
+		var stampMultErr error
+		stampShape, stampMultErr = img.Multiply(stampShape, maskedTex)
+		if stampMultErr != nil {
+			return nil, fmt.Errorf(cardsStampErrFmtStr, stampMultErr)
+		}
 	}
 
-	countryImg, countryErr := getCountryFlagImage(email.Country, shapeEnum)
+	countryImg, countryErr := getCountryFlagImage(params.Country, shapeEnum)
 	if countryErr != nil {
 		return nil, fmt.Errorf(cardsStampErrFmtStr, countryErr)
 	}
@@ -99,11 +92,23 @@ func createStamp(email *EmailParams) (*vips.ImageRef, error) {
 	if padFlatErr != nil {
 		return nil, fmt.Errorf(cardsStampErrFmtStr, padFlatErr)
 	}
+	defer paddedFlattened.Close()
 
 	compositeErr := stampShadow.Composite(paddedFlattened, vips.BlendModeOver, 9, 9)
 	if compositeErr != nil {
 		return nil, fmt.Errorf(cardsStampErrFmtStr, compositeErr)
 	}
 
-	return stampShadow, nil
+	stampBuff, _, backBuffErr := stampShadow.ExportPng(&vips.PngExportParams{Quality: 90})
+	if backBuffErr != nil {
+		return nil, backBuffErr
+	}
+	defer stampShadow.Close()
+	stamp, stampErr := img.LoadFromBuffer(stampBuff)
+	if stampErr != nil {
+		return nil, stampErr
+	}
+	return stamp, nil
 }
+
+// © Arthur Gladfield

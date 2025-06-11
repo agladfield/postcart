@@ -2,62 +2,44 @@ package cards
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
-	"github.com/agladfield/postcart/pkg/shared/enum"
 	"github.com/davidbyttow/govips/v2/vips"
 )
 
-func Parse(inbound *postmark.InboundData) (EmailParams, error) {
-	// subject we use whatever
-
-	details, err := parseEmailBody(inbound.TextBody)
-	if err != nil {
-		return EmailParams{}, err
-	}
-
-	details.ID = inbound.MessageID
-	details.Subject = inbound.Subject
-
-	if len(inbound.Attachments) > 0 {
-		details.Attachment = &inbound.Attachments[0]
-	}
-
-	return details, nil
-}
-
-func assignUnknownValues(email *EmailParams) {
-	if email.Border == enum.BorderUnknown {
-		email.Border = enum.BorderStandard
-	}
-}
+const (
+	cardsJobErrFmtStr    = "cards job err: %w"
+	cardsCreateErrFmtStr = "cards create err: %w"
+)
 
 type sideOutput struct {
 	ascii string
 	image *vips.ImageRef
 }
 
-func Create(ctx context.Context, email *EmailParams) (*unifiedOutput, error) {
-	assignUnknownValues(email)
+func Create(ctx context.Context, params *Params) (*unifiedOutput, error) {
+	assignUnknownValues(params)
 
 	// Create the back artwork
-	back, backErr := createBack(ctx, email)
+	back, backErr := createBack(ctx, params)
 	if backErr != nil {
-		return nil, backErr
+		return nil, fmt.Errorf(cardsCreateErrFmtStr, backErr)
 	}
 	defer back.image.Close()
 
 	// Create the front content
 	// create front should have imageref, text contents
-	front, frontErr := createFront(email)
+	front, frontErr := createFront(params)
 	if frontErr != nil {
-		return nil, frontErr
+		return nil, fmt.Errorf(cardsCreateErrFmtStr, frontErr)
 	}
 	defer front.image.Close()
 
-	bordered, bordersErr := addBorders(front, back, email.Border, email.Country)
+	bordered, bordersErr := addBorders(front, back, params.Border, params.Textured, params.Country)
 	if bordersErr != nil {
-		return nil, bordersErr
+		return nil, fmt.Errorf(cardsCreateErrFmtStr, bordersErr)
 	}
 	defer bordered.front.image.Close()
 	defer bordered.back.image.Close()
@@ -65,30 +47,38 @@ func Create(ctx context.Context, email *EmailParams) (*unifiedOutput, error) {
 	// create unified should return unified image ref, joined ascii art
 	unified, unifyErr := unify(bordered)
 	if unifyErr != nil {
-		return nil, unifyErr
+		return nil, fmt.Errorf(cardsCreateErrFmtStr, unifyErr)
 	}
 	return unified, nil
 }
 
-func processJob(ctx context.Context, email EmailParams) error {
-	// fmt.Println("processing:", email)
+func processJob(ctx context.Context, email Params) error {
 	unified, createErr := Create(ctx, &email)
 	if createErr != nil {
-		return createErr
+		return fmt.Errorf(cardsJobErrFmtStr, createErr)
 	}
 	defer unified.UnifiedImage.Close()
 
-	// create email to send should return postmark email
+	// prepare email contents to send with postmark (returns postmark email with template)
 	preparedEmail, prepareEmailErr := prepareEmail(unified, &email)
 	if prepareEmailErr != nil {
-		return prepareEmailErr
+		return fmt.Errorf(cardsJobErrFmtStr, prepareEmailErr)
 	}
-	// // send email
+	// send email
 	_, emailErr := postmark.SendWithTemplate(*preparedEmail)
 	if emailErr != nil {
-		return emailErr
+		return fmt.Errorf(cardsJobErrFmtStr, emailErr)
 	}
-	// to check success measure emailRes.ErrorCode == 0
-	// if success, record job as done, delete queued job record using transactions
+	jdb.RecordSent()
+	jdb.RemoveJobFromRecords(email.ID)
+	if email.Attachment != nil {
+		remErr := jdb.RemoveAttachmentForJob(email.ID)
+		if remErr != nil {
+			return fmt.Errorf(cardsJobErrFmtStr, remErr)
+		}
+	}
+
 	return nil
 }
+
+// © Arthur Gladfield

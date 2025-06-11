@@ -29,10 +29,12 @@ type ListTemplatesResponse struct {
 	Templates  []TemplateInfo `json:"Templates"`
 }
 
-func ListTemplates() (*ListTemplatesResponse, error) {
+func ListTemplates(count, offset int) (*ListTemplatesResponse, error) {
 	var templatesRes ListTemplatesResponse
 
-	reqErr := request(api, listTemplatesPath, http.MethodGet, nil, &templatesRes)
+	listTemplateQueryURL := fmt.Sprintf("%s?count=%d&offset=%d", listTemplatesPath, count, offset)
+
+	reqErr := request(api, listTemplateQueryURL, http.MethodGet, nil, &templatesRes)
 	if reqErr != nil {
 		return nil, fmt.Errorf(postmarkAPIErrFmtStr, reqErr)
 	}

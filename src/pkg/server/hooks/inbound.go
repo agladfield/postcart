@@ -6,16 +6,22 @@ import (
 	"net/http"
 
 	"github.com/agladfield/postcart/pkg/cards"
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 	"github.com/agladfield/postcart/pkg/shared/env"
 )
 
 var (
-	errInboundNoFulLRecipients = errors.New("inbound email did not contain full recipients value")
-	errInboundInvalidAddressee = errors.New("inbound email not addressed to the correct recipient")
+	errInboundNoFulLRecipients   = errors.New("inbound email did not contain full recipients value")
+	errInboundInvalidAddressee   = errors.New("inbound email not addressed to the correct recipient")
+	errInboundMessageTooLong     = errors.New("inbound email message was too long")
+	errInboundSenderIsBlocked    = errors.New("inbound email sender is blocked from sending more emails")
+	errInboundRecipientIsBlocked = errors.New("inbound email intended recipient is blocked from receiving emails")
 )
 
 const validateInboundErrFmtStr = "inbound validation err: %w"
+
+const maxEmailsPerSender = 3
 
 func validateInboundRecipient(fullRecipients *[]postmark.EmailAddressFull) error {
 	if fullRecipients == nil {
@@ -30,6 +36,8 @@ func validateInboundRecipient(fullRecipients *[]postmark.EmailAddressFull) error
 	return fmt.Errorf(validateInboundErrFmtStr, errInboundInvalidAddressee)
 }
 
+const maxMsgLen = 2048
+
 func inboundHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
@@ -40,12 +48,27 @@ func inboundHandler(w http.ResponseWriter, r *http.Request) {
 		errorResponse(&w, r, decodeBodyErr)
 		return
 	}
+	jdb.RecordInbound()
+
+	if jdb.IsSenderBlocked(inboundRequest.FromFull.Email) {
+		errorResponse(&w, r, errInboundSenderIsBlocked)
+		// try blocking sender again as they must have gotten
+		// past inbound rule
+		cards.BlockSender(inboundRequest.FromFull.Email)
+		return
+	}
+
+	senderCount := jdb.IncrementSender(inboundRequest.FromFull.Email)
 
 	recipientErr := validateInboundRecipient(&inboundRequest.ToFull)
 	if recipientErr != nil {
 		// log error internally
 		errorResponse(&w, r, recipientErr)
-		// record sender bad record, 3 strikes
+		return
+	}
+
+	if len(inboundRequest.TextBody) > maxMsgLen {
+		errorResponse(&w, r, errInboundMessageTooLong)
 		return
 	}
 
@@ -53,79 +76,26 @@ func inboundHandler(w http.ResponseWriter, r *http.Request) {
 	// if invalid, return 403
 	job, parseErr := cards.Parse(&inboundRequest)
 	if parseErr != nil {
-		// log error internally
 		errorResponse(&w, r, parseErr)
-		// record sender bad record, 3 strikes
 		return
 	}
 
-	// start := time.Now()
-	// // we get the database connection, record the postmark inbound email details and
-	// // the parsed job parameter details
-	// db := pdb.Obtain()
-	// tx, txErr := db.DB.Begin()
-	// if txErr != nil {
-	// 	// should signal retry
-	// 	retryResponse(&w, r, txErr)
-	// 	return
-	// }
-	// defer tx.Rollback()
+	if jdb.IsRecipientBlocked(job.To.Email) {
+		errorResponse(&w, r, errInboundRecipientIsBlocked)
+		return
+	}
+	if senderCount > maxEmailsPerSender {
+		cards.BlockSender(inboundRequest.FromFull.Email)
+	}
 
-	// qtx := db.WithTx(tx)
-
-	// // record inbound
-	// setInboundErr := qtx.SetInboundEmail(context.Background(), pdb.SetInboundEmailParams{
-	// 	ID:       inboundRequest.MessageID,
-	// 	Received: time.Now().Unix(),
-	// 	Email:    inboundRequest.FromFull.Email,
-	// 	FromName: inboundRequest.FromFull.Name,
-	// 	Subject:  inboundRequest.Subject,
-	// 	Message:  inboundRequest.TextBody,
-	// })
-
-	// if setInboundErr != nil {
-	// 	// signal retry
-	// 	retryResponse(&w, r, setInboundErr)
-	// 	return
-	// }
-
-	// // get the user (sender)
-	// sender, senderErr := cards.GetSenderByEmail(inboundRequest.FromFull.Email)
-	// if senderErr != nil {
-	// 	// signal retry
-	// 	retryResponse(&w, r, senderErr)
-	// 	return
-	// }
-
-	// fmt.Println("sender:", sender)
-	// fmt.Println("dur", time.Since(start))
-	// retryResponse(&w, r, errors.New("retry"))
-	// return
-
-	// record as queued job
-	// queuedRequest := job.ToQueueRequest(sender.ID)
-	// setQueuedRequestErr := qtx.SetQueuedRequest(context.Background(), *queuedRequest)
-	// if setQueuedRequestErr != nil {
-	// 	// signal retry
-	// 	retryResponse(&w, r, setQueuedRequestErr)
-	// 	return
-	// }
-
-	// commitErr := tx.Commit()
-	// if commitErr != nil {
-	// 	retryResponse(&w, r, commitErr)
-	// 	return
-	// }
-
-	// record the two as a transaction
-
-	cards.AddToQueue(job)
-
-	// pass postcardReq over to cards job channel
-
-	// if parse is ok we add it to job queue/channel
-	// and database
-	// then respond with
+	// save email/job
+	addToQueueErr := cards.AddToQueue(job)
+	if addToQueueErr != nil {
+		retryResponse(&w, r, addToQueueErr)
+		return
+	}
 
 	okResponse(&w, r)
 }
+
+// © Arthur Gladfield

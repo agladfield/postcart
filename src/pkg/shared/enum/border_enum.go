@@ -10,3 +10,5 @@ const (
 	BorderStripes
 	BorderPhoto
 )
+
+// © Arthur Gladfield

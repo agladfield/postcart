@@ -13,9 +13,6 @@ import (
 )
 
 // list embedded directories here
-// countries
-// postcards
-// stamps
 
 //go:embed res/artwork
 var placeholderArtwork embed.FS
@@ -42,6 +39,7 @@ const (
 
 func Close() {
 	// libvips close
+	closeCache()
 	vips.Shutdown()
 }
 
@@ -57,17 +55,26 @@ func Prepare(ctx context.Context, wg *sync.WaitGroup) error {
 			return fmt.Errorf(cardsPrepareErrFmtStr, fontsErr)
 		}
 	}
+	cacheErr := createCaches()
+	if cacheErr != nil {
+		return cacheErr
+	}
 
-	vips.LoggingSettings(nil, vips.LogLevelError) // don't log anything unless an error with vips occurs
+	vips.LoggingSettings(nil, vips.LogLevelWarning) // don't log anything unless an error with vips occurs
 	vips.Startup(&vips.Config{
 		ConcurrencyLevel: runtime.NumCPU(),
 	})
 
-	// create queue
+	templatesErr := checkTemplatesAreAvailable()
+	if templatesErr != nil {
+		return templatesErr
+	}
+
+	// create queues
+	createBlockQueues(ctx, wg)
 	createQueue(ctx, wg)
-	// start backlogger
-	// retry jobs that failed every 2 minutes unless failed over three
-	// times
 
 	return nil
 }
+
+// © Arthur Gladfield

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/shared/env"
 )
 
@@ -83,6 +84,9 @@ const (
 
 func printRequestOutput(r *http.Request, status int) {
 	fmt.Printf("[%d] %s\n", status, r.URL.Path)
+	if status > 200 {
+		jdb.RecordRejection()
+	}
 }
 
 // okResponse sends a 200 response to postmark
@@ -96,7 +100,6 @@ func okResponse(w *http.ResponseWriter, r *http.Request) {
 // according to postmark docs 200 and 403 are the correct response codes
 // to prevent retries
 func errorResponse(w *http.ResponseWriter, r *http.Request, err error) {
-	// do something with the error
 	(*w).WriteHeader(postmarkRejectStatus)
 	fmt.Fprintf(*w, "error")
 	log.Printf("an error occured: %v\n", err)
@@ -104,9 +107,11 @@ func errorResponse(w *http.ResponseWriter, r *http.Request, err error) {
 }
 
 func retryResponse(w *http.ResponseWriter, r *http.Request, err error) {
-	// do something with the error
 	(*w).WriteHeader(postmarkRetryStatus)
 	fmt.Fprintf(*w, "error-retry")
 	log.Printf("an error occured: %v\n", err)
 	printRequestOutput(r, postmarkRetryStatus)
+	jdb.RecordRetry()
 }
+
+// © Arthur Gladfield

@@ -1,9 +1,13 @@
 package img
 
 import (
+	"fmt"
+
 	"github.com/agladfield/postcart/pkg/shared/tools/colors"
 	"github.com/davidbyttow/govips/v2/vips"
 )
+
+const imgAddTextErrFmtStr = "img add text err: %w"
 
 type TextParams struct {
 	Text    string
@@ -21,11 +25,11 @@ func AddText(target *vips.ImageRef, text *TextParams) error {
 		var alphaExtractErr error
 		alpha, alphaExtractErr = target.ExtractBandToImage(3, 1)
 		if alphaExtractErr != nil {
-			return alphaExtractErr
+			return fmt.Errorf(imgAddTextErrFmtStr, alphaExtractErr)
 		}
 		extractErr := target.ExtractBand(0, 3)
 		if extractErr != nil {
-			return extractErr
+			return fmt.Errorf(imgAddTextErrFmtStr, extractErr)
 		}
 	}
 
@@ -63,12 +67,17 @@ func AddText(target *vips.ImageRef, text *TextParams) error {
 	}
 	labelErr := target.Label(&label)
 	if labelErr != nil {
-		return labelErr
+		return fmt.Errorf(imgAddTextErrFmtStr, labelErr)
 	}
 
 	if alpha != nil {
-		target.BandJoin(alpha)
+		bandJoinErr := target.BandJoin(alpha)
+		if bandJoinErr != nil {
+			return fmt.Errorf(imgAddTextErrFmtStr, bandJoinErr)
+		}
 	}
 
 	return nil
 }
+
+// © Arthur Gladfield

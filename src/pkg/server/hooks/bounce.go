@@ -3,6 +3,8 @@ package hooks
 import (
 	"net/http"
 
+	"github.com/agladfield/postcart/pkg/cards"
+	"github.com/agladfield/postcart/pkg/jdb"
 	"github.com/agladfield/postcart/pkg/postmark"
 )
 
@@ -16,11 +18,20 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		errorResponse(&w, r, decodeBodyErr)
 		return
 	}
-
 	// record as bounce
+	jdb.RecordBounce()
 	// block email from receiving emails
+	jdb.BlockRecipient(bounceData.Email)
+	jdb.RecordBlockedRecipient()
 	// block sender from sending emails
-	// update job status
+	if bounceData.Metadata != nil {
+		senderEmail, senderEmailExists := bounceData.Metadata["sender_email"]
+		if senderEmailExists {
+			cards.BlockSender(senderEmail)
+		}
+	}
 
 	okResponse(&w, r)
 }
+
+// © Arthur Gladfield

@@ -344,3 +344,5 @@ func Splash(content SplashContentOptions, config SplashConfigOptions) string {
 
 	return splashString
 }
+
+// © Arthur Gladfield

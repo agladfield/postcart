@@ -29,22 +29,24 @@ const (
 	cardsBorderPhotoFrameErrFmtStr = "cards border photo frame err: %w"
 )
 
-func addBorders(front, back *sideOutput, border enum.BorderEnum, country string) (*borderedOutput, error) {
+func addBorders(front, back *sideOutput, border enum.BorderEnum, textured enum.TexturedEnum, country string) (*borderedOutput, error) {
 	countryColors, countryColorsErr := getCountryColors(country)
 	if countryColorsErr != nil {
 		return nil, fmt.Errorf(cardsBorderErrFmtStr, countryColorsErr)
 	}
 	// create the borders
-	borders, borderErrs := createBorders(border, enum.PostcardTextureClassic, countryColors, back.image)
+	borders, borderErrs := createBorders(border, textured, countryColors, back.image)
 	if borderErrs != nil {
 		return nil, fmt.Errorf(cardsBorderErrFmtStr, borderErrs)
 	}
+
 	// add them
 	// flatten for front, multiply back content
 	frontFlattened, flattenErr := img.Flatten(borders.frontBorder, front.image)
 	if flattenErr != nil {
 		return nil, fmt.Errorf(cardsBorderErrFmtStr, flattenErr)
 	}
+
 	// pad the back
 	// we have to pad the back either way
 	var updatedArtImage *vips.ImageRef
@@ -53,7 +55,7 @@ func addBorders(front, back *sideOutput, border enum.BorderEnum, country string)
 		if padErr != nil {
 			return nil, fmt.Errorf(cardsBorderErrFmtStr, padErr)
 		}
-		bgMask, bgMaskLoadErr := img.LoadFromEmbed(&postcardResources, "res/postcards/bg-frame.png")
+		bgMask, bgMaskLoadErr := pcCache.Obtain("res/postcards/bg-frame.png")
 		if bgMaskLoadErr != nil {
 			return nil, fmt.Errorf(cardsBorderErrFmtStr, bgMaskLoadErr)
 		}
@@ -78,17 +80,34 @@ func addBorders(front, back *sideOutput, border enum.BorderEnum, country string)
 		return nil, fmt.Errorf(cardsBorderErrFmtStr, multErr)
 	}
 
-	// we create the back border first
-	// but we flip that one rather than have to flip texture twice
+	frontBuff, _, frontBuffErr := frontFlattened.ExportPng(&vips.PngExportParams{Quality: 90})
+	if frontBuffErr != nil {
+		return nil, frontBuffErr
+	}
+	defer frontFlattened.Close()
+	frontImg, frontErr := img.LoadFromBuffer(frontBuff)
+	if frontErr != nil {
+		return nil, frontErr
+	}
+
+	backBuff, _, backBuffErr := backMultiplied.ExportPng(&vips.PngExportParams{Quality: 90})
+	if backBuffErr != nil {
+		return nil, backBuffErr
+	}
+	defer backMultiplied.Close()
+	backImg, backErr := img.LoadFromBuffer(backBuff)
+	if backErr != nil {
+		return nil, backErr
+	}
 
 	frontSide := sideOutput{
 		ascii: front.ascii,
-		image: frontFlattened,
+		image: frontImg,
 	}
 
 	backSide := sideOutput{
 		ascii: back.ascii,
-		image: backMultiplied,
+		image: backImg,
 	}
 
 	return &borderedOutput{
@@ -97,8 +116,8 @@ func addBorders(front, back *sideOutput, border enum.BorderEnum, country string)
 	}, nil
 }
 
-func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, countryColors []colors.Color, artImg *vips.ImageRef) (*borders, error) {
-	baseImg, baseImgErr := img.LoadFromEmbed(&postcardResources, "res/postcards/rect.png")
+func createBorders(border enum.BorderEnum, textured enum.TexturedEnum, countryColors []colors.Color, artImg *vips.ImageRef) (*borders, error) {
+	baseImg, baseImgErr := pcCache.Obtain("res/postcards/rect.png")
 	if baseImgErr != nil {
 		return nil, fmt.Errorf(cardsBorderCreateErrFmtStr, baseImgErr)
 	}
@@ -115,8 +134,6 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 		borderErr = createFrameCubes(baseImg, countryColors)
 	case enum.BorderLines:
 		borderErr = createFrameLines(baseImg, countryColors)
-	// case enum.BorderJaggedWithColors:
-	// 	borderErr = createBorderJaggedNoColors(baseImg, countryColors)
 	default:
 	}
 
@@ -128,6 +145,7 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 	var backBorder *vips.ImageRef
 
 	frontBorder = baseImg
+
 	if border != enum.BorderPhoto {
 		frontCopy, frontCopyErr := frontBorder.Copy()
 		if frontCopyErr != nil {
@@ -139,7 +157,7 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 		}
 		backBorder = frontCopy
 	} else {
-		flatImg, flatImgErr := img.LoadFromEmbed(&postcardResources, "res/postcards/rect.png")
+		flatImg, flatImgErr := pcCache.Obtain("res/postcards/rect.png")
 		if flatImgErr != nil {
 			return nil, fmt.Errorf(cardsBorderCreateErrFmtStr, flatImgErr)
 		}
@@ -147,8 +165,8 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 	}
 
 	// at this stage we apply textures to the borders if required
-	if texture == enum.PostcardTextureClassic {
-		texture, textureErr := img.LoadFromEmbed(&postcardResources, "res/postcards/texture-classic.png")
+	if textured == enum.TexturedEnabled {
+		texture, textureErr := pcCache.Obtain("res/postcards/texture-classic.png")
 		if textureErr != nil {
 			return nil, fmt.Errorf(cardsBorderCreateErrFmtStr, textureErr)
 		}
@@ -176,6 +194,16 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 		defer oldBackBorder.Close()
 	}
 
+	_, toBytesErr := frontBorder.ToBytes()
+	if toBytesErr != nil {
+		return nil, fmt.Errorf(cardsBorderErrFmtStr, toBytesErr)
+	}
+
+	_, toBytesErr = backBorder.ToBytes()
+	if toBytesErr != nil {
+		return nil, fmt.Errorf(cardsBorderErrFmtStr, toBytesErr)
+	}
+
 	return &borders{
 		frontBorder: frontBorder,
 		backBorder:  backBorder,
@@ -183,13 +211,13 @@ func createBorders(border enum.BorderEnum, texture enum.PostcardTextureEnum, cou
 }
 
 func createFrameStripes(baseImg *vips.ImageRef, countryColors []colors.Color) error {
-	stripesPrimary, stripesPrimErr := img.LoadFromEmbed(&postcardResources, "res/postcards/stripe1-primary.png")
+	stripesPrimary, stripesPrimErr := pcCache.Obtain("res/postcards/stripe1-primary.png")
 	if stripesPrimErr != nil {
 		return fmt.Errorf(cardsBorderStripesErrFmtStr, stripesPrimErr)
 	}
 	defer stripesPrimary.Close()
 
-	stripesSecondary, stripesSecErr := img.LoadFromEmbed(&postcardResources, "res/postcards/stripe1-secondary.png")
+	stripesSecondary, stripesSecErr := pcCache.Obtain("res/postcards/stripe1-secondary.png")
 	if stripesSecErr != nil {
 		return fmt.Errorf(cardsBorderStripesErrFmtStr, stripesSecErr)
 	}
@@ -224,7 +252,7 @@ func createFrameStripes(baseImg *vips.ImageRef, countryColors []colors.Color) er
 }
 
 func createFrameLines(baseImg *vips.ImageRef, countryColors []colors.Color) error {
-	linesPrimary, linesPrimErr := img.LoadFromEmbed(&postcardResources, "res/postcards/border-lines1.png")
+	linesPrimary, linesPrimErr := pcCache.Obtain("res/postcards/border-lines1.png")
 	if linesPrimErr != nil {
 		return fmt.Errorf(cardsBorderLinesErrFmtStr, linesPrimErr)
 	}
@@ -246,7 +274,7 @@ func createFrameLines(baseImg *vips.ImageRef, countryColors []colors.Color) erro
 	}
 
 	if len(countryColors) > 1 {
-		linesSecondary, linesSecErr := img.LoadFromEmbed(&postcardResources, "res/postcards/border-lines2.png")
+		linesSecondary, linesSecErr := pcCache.Obtain("res/postcards/border-lines2.png")
 		if linesSecErr != nil {
 			return fmt.Errorf(cardsBorderLinesErrFmtStr, linesSecErr)
 		}
@@ -267,7 +295,7 @@ func createFrameLines(baseImg *vips.ImageRef, countryColors []colors.Color) erro
 }
 
 func createFrameCubes(baseImg *vips.ImageRef, countryColors []colors.Color) error {
-	cubesPrimary, cubesPrimErr := img.LoadFromEmbed(&postcardResources, "res/postcards/border-cubes1.png")
+	cubesPrimary, cubesPrimErr := pcCache.Obtain("res/postcards/border-cubes1.png")
 	if cubesPrimErr != nil {
 		return fmt.Errorf(cardsBorderCubesErrFmtStr, cubesPrimErr)
 	}
@@ -289,7 +317,7 @@ func createFrameCubes(baseImg *vips.ImageRef, countryColors []colors.Color) erro
 	}
 
 	if len(countryColors) > 1 {
-		cubesSecondary, cubesSecErr := img.LoadFromEmbed(&postcardResources, "res/postcards/border-cubes2.png")
+		cubesSecondary, cubesSecErr := pcCache.Obtain("res/postcards/border-cubes2.png")
 		if cubesSecErr != nil {
 			return fmt.Errorf(cardsBorderCubesErrFmtStr, cubesSecErr)
 		}
@@ -316,12 +344,11 @@ func createPhotoFrame(baseImg, artImg *vips.ImageRef) error {
 		return fmt.Errorf(cardsBorderPhotoFrameErrFmtStr, errBorderPhotoFrameNilArtwork)
 	}
 
-	bgFrameMask, bgFrameMaskErr := img.LoadFromEmbed(&postcardResources, "res/postcards/bg-frame-inverse.png")
+	bgFrameMask, bgFrameMaskErr := pcCache.Obtain("res/postcards/bg-frame-inverse.png")
 	if bgFrameMaskErr != nil {
 		return fmt.Errorf(cardsBorderPhotoFrameErrFmtStr, bgFrameMaskErr)
 	}
 
-	// var oldBaseImg = baseImg
 	maskedFrame, frameArtErr := img.Mask(artImg, bgFrameMask)
 	if frameArtErr != nil {
 		return fmt.Errorf(cardsBorderPhotoFrameErrFmtStr, frameArtErr)
@@ -342,3 +369,5 @@ func createPhotoFrame(baseImg, artImg *vips.ImageRef) error {
 
 	return nil
 }
+
+// © Arthur Gladfield

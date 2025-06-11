@@ -11,3 +11,5 @@ const (
 	ArtworkIslands
 	ArtworkCity
 )
+
+// © Arthur Gladfield

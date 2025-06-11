@@ -20,3 +20,5 @@ func (s StampShapeEnum) IsCircular() bool {
 		return false
 	}
 }
+
+// © Arthur Gladfield

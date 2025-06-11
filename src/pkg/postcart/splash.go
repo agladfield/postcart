@@ -32,3 +32,5 @@ func postcartSplash() {
 	})
 	fmt.Println(str)
 }
+
+// © Arthur Gladfield

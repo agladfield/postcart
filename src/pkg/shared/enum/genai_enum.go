@@ -6,3 +6,5 @@ const (
 	GenAIProviderUnknown GenAIProviderEnum = iota
 	GenAIGoogleImagen4
 )
+
+// © Arthur Gladfield
